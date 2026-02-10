@@ -1,0 +1,30 @@
+// functions/admin/list.js
+export async function onRequestGet({ request, env }) {
+  const key = request.headers.get("x-admin-key") || "";
+  if (!env.ADMIN_KEY || key !== env.ADMIN_KEY) {
+    return json({ ok: false, error: "Unauthorized" }, 401);
+  }
+
+  const rows = await env.DB.prepare(
+    "SELECT wallet, txHash, paidAt, expiresAt FROM payments ORDER BY paidAt DESC LIMIT 200"
+  ).all();
+
+  const now = Date.now();
+  const data = (rows.results || []).map(r => ({
+    wallet: r.wallet,
+    txHash: r.txHash,
+    paidAt: Number(r.paidAt),
+    expiresAt: Number(r.expiresAt),
+    daysLeft: Math.max(0, Math.ceil((Number(r.expiresAt) - now) / 86400000)),
+    status: now >= Number(r.expiresAt) ? "expired" : "active",
+  }));
+
+  return json({ ok: true, count: data.length, data });
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}

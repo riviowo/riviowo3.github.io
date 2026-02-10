@@ -1,0 +1,21 @@
+// public/js/lib/dom.js
+export const $ = (id) => document.getElementById(id);
+
+export function on(el, evt, fn) {
+  el?.addEventListener(evt, fn);
+}
+
+export function setText(id, text) {
+  const n = $(id);
+  if (n) n.textContent = text ?? "";
+}
+
+export function setHTML(id, html) {
+  const n = $(id);
+  if (n) n.innerHTML = html ?? "";
+}
+
+export function setDisabled(idOrEl, disabled) {
+  const el = typeof idOrEl === "string" ? $(idOrEl) : idOrEl;
+  if (el) el.disabled = !!disabled;
+}

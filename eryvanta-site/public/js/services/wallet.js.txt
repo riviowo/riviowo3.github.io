@@ -1,0 +1,44 @@
+// public/js/services/wallet.js
+export async function requireProvider() {
+  if (!window.ethereum) throw new Error("MetaMask is not installed.");
+  return window.ethereum;
+}
+
+export async function connectWallet() {
+  await requireProvider();
+  const accs = await window.ethereum.request({ method: "eth_requestAccounts" });
+  const account = accs?.[0];
+  if (!account) throw new Error("No wallet account selected.");
+  return account;
+}
+
+export async function getChainId() {
+  await requireProvider();
+  return window.ethereum.request({ method: "eth_chainId" });
+}
+
+export async function getBalanceWeiHex(account) {
+  await requireProvider();
+  return window.ethereum.request({ method: "eth_getBalance", params: [account, "latest"] });
+}
+
+export async function sendTx({ from, to, valueHex }) {
+  await requireProvider();
+  return window.ethereum.request({
+    method: "eth_sendTransaction",
+    params: [{ from, to, value: valueHex }],
+  });
+}
+
+export async function getReceipt(txHash) {
+  await requireProvider();
+  return window.ethereum.request({ method: "eth_getTransactionReceipt", params: [txHash] });
+}
+
+export function isUserRejected(err) {
+  return err?.code === 4001;
+}
+
+export function isPendingRequest(err) {
+  return err?.code === -32002;
+}

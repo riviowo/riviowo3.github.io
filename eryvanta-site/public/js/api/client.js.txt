@@ -1,0 +1,14 @@
+// public/js/api/client.js
+export async function apiSubmitPayment({ wallet, txHash }) {
+  const res = await fetch("/api/submitPayment", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ wallet, txHash }),
+  });
+  return res.json();
+}
+
+export async function apiStatus(wallet) {
+  const res = await fetch(`/api/status?wallet=${encodeURIComponent(wallet)}`);
+  return res.json();
+}

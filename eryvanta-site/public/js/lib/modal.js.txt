@@ -1,0 +1,41 @@
+// public/js/lib/modal.js
+import { $, setText } from "./dom.js";
+
+export function modalOpen() {
+  const m = $("modal");
+  if (m) m.classList.add("show");
+  modalSet("Preparing...", "Please wait");
+  modalSetState("loading");
+}
+
+export function modalClose() {
+  const m = $("modal");
+  if (m) m.classList.remove("show");
+}
+
+export function modalSet(title, desc) {
+  setText("modalTitle", title);
+  setText("modalDesc", desc);
+}
+
+export function modalSetState(state) {
+  // state: "loading" | "success" | "error"
+  const iconLoading = $("modalIconLoading");
+  const iconSuccess = $("modalIconSuccess");
+  const iconError = $("modalIconError");
+
+  iconLoading?.classList.toggle("hide", state !== "loading");
+  iconSuccess?.classList.toggle("hide", state !== "success");
+  iconError?.classList.toggle("hide", state !== "error");
+}
+
+export async function modalSuccessThenClose(ms = 900) {
+  modalSetState("success");
+  await new Promise((r) => setTimeout(r, ms));
+  modalClose();
+}
+
+export function modalError(title, desc) {
+  modalSet(title, desc);
+  modalSetState("error");
+}

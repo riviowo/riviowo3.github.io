@@ -1,0 +1,39 @@
+// functions/api/status.js
+export async function onRequestGet({ request, env }) {
+  try {
+    const url = new URL(request.url);
+    const wallet = (url.searchParams.get("wallet") || "").toLowerCase();
+    if (!wallet || !wallet.startsWith("0x")) {
+      return json({ ok: false, error: "Invalid wallet." }, 400);
+    }
+
+    const row = await env.DB
+      .prepare("SELECT wallet, txHash, paidAt, expiresAt FROM payments WHERE wallet = ? ORDER BY paidAt DESC LIMIT 1")
+      .bind(wallet)
+      .first();
+
+    if (!row) return json({ ok: true, status: "inactive" });
+
+    const now = Date.now();
+    const expiresAt = Number(row.expiresAt);
+    const status = now >= expiresAt ? "expired" : "active";
+
+    return json({
+      ok: true,
+      status,
+      wallet: row.wallet,
+      txHash: row.txHash,
+      paidAt: Number(row.paidAt),
+      expiresAt,
+    });
+  } catch (e) {
+    return json({ ok: false, error: e?.message || String(e) }, 500);
+  }
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}

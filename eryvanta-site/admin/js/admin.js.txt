@@ -1,0 +1,10 @@
+const el = (id) => document.getElementById(id);
+
+el("btnLoad").onclick = async () => {
+  const key = el("adminKey").value.trim();
+  const res = await fetch("/admin/list", {
+    headers: { "x-admin-key": key },
+  });
+  const json = await res.json().catch(() => ({ ok:false, error:"Bad JSON" }));
+  el("out").textContent = JSON.stringify(json, null, 2);
+};

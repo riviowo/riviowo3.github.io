@@ -1,0 +1,76 @@
+// functions/api/submitPayment.js
+const POLYGON_CHAIN_ID = "0x89";
+const EXPECTED_VALUE_WEI = 100000000000000000n; // 0.1 POL
+
+function pickRpc(env) {
+  // You can override in env if you want later
+  return env.POLYGON_RPC || "https://polygon-bor-rpc.publicnode.com";
+}
+
+async function rpc(env, method, params) {
+  const url = pickRpc(env);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error.message || "RPC error");
+  return json.result;
+}
+
+export async function onRequestPost({ request, env }) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const wallet = (body.wallet || "").toLowerCase();
+    const txHash = (body.txHash || "").toLowerCase();
+
+    if (!wallet.startsWith("0x") || wallet.length < 10) return json({ ok: false, error: "Invalid wallet." }, 400);
+    if (!txHash.startsWith("0x") || txHash.length < 10) return json({ ok: false, error: "Invalid txHash." }, 400);
+
+    // chain check
+    const chainId = await rpc(env, "eth_chainId", []);
+    if (String(chainId).toLowerCase() !== POLYGON_CHAIN_ID) {
+      return json({ ok: false, error: "RPC not Polygon." }, 500);
+    }
+
+    const tx = await rpc(env, "eth_getTransactionByHash", [txHash]);
+    if (!tx) return json({ ok: false, error: "Transaction not found." }, 400);
+
+    const to = (tx.to || "").toLowerCase();
+    const from = (tx.from || "").toLowerCase();
+    const value = BigInt(tx.value || "0x0");
+
+    const merchant = (env.MERCHANT_ADDRESS || "").toLowerCase();
+    if (!merchant.startsWith("0x")) return json({ ok: false, error: "Server misconfigured merchant." }, 500);
+
+    if (to !== merchant) return json({ ok: false, error: "Receiver mismatch." }, 400);
+    if (from !== wallet) return json({ ok: false, error: "Sender mismatch." }, 400);
+    if (value !== EXPECTED_VALUE_WEI) return json({ ok: false, error: "Amount mismatch." }, 400);
+
+    const receipt = await rpc(env, "eth_getTransactionReceipt", [txHash]);
+    if (!receipt) return json({ ok: false, error: "Receipt not found yet." }, 400);
+    if (String(receipt.status).toLowerCase() !== "0x1") return json({ ok: false, error: "Transaction failed." }, 400);
+
+    // Save to D1
+    const paidAt = Date.now();
+    const expiresAt = paidAt + 30 * 24 * 60 * 60 * 1000;
+
+    // prevent duplicates by txHash
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO payments (wallet, txHash, paidAt, expiresAt) VALUES (?, ?, ?, ?)"
+    ).bind(wallet, txHash, paidAt, expiresAt).run();
+
+    // always return latest
+    return json({ ok: true, wallet, txHash, paidAt, expiresAt });
+  } catch (e) {
+    return json({ ok: false, error: e?.message || String(e) }, 500);
+  }
+}
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}

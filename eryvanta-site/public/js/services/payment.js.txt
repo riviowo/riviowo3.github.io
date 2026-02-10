@@ -1,0 +1,23 @@
+// public/js/services/payment.js
+import { PAY_WEI_HEX, MERCHANT_ADDRESS } from "../config.js";
+import { sendTx, getReceipt } from "./wallet.js";
+
+export async function payFixed({ account }) {
+  // wallet popup confirm happens here
+  const txHash = await sendTx({
+    from: account,
+    to: MERCHANT_ADDRESS,
+    valueHex: PAY_WEI_HEX,
+  });
+  return txHash;
+}
+
+export async function waitForReceipt({ txHash, timeoutMs = 300000, pollMs = 2000 }) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const r = await getReceipt(txHash).catch(() => null);
+    if (r) return r;
+    await new Promise((r2) => setTimeout(r2, pollMs));
+  }
+  throw new Error("Timeout while waiting for confirmation.");
+}

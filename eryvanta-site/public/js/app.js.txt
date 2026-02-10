@@ -1,0 +1,237 @@
+// public/js/app.js
+import { APP_NAME, POLYGON_CHAIN_ID, MERCHANT_ADDRESS, PAY_WEI } from "./config.js";
+import { apiSubmitPayment, apiStatus } from "./api/client.js";
+import { $, setText, setDisabled, on } from "./lib/dom.js";
+import { modalOpen, modalSet, modalSetState, modalSuccessThenClose, modalError, modalClose } from "./lib/modal.js";
+import { connectWallet, getChainId, getBalanceWeiHex, isPendingRequest, isUserRejected } from "./services/wallet.js";
+import { payFixed, waitForReceipt } from "./services/payment.js";
+import { showPlan, hidePlan } from "./services/membership.js";
+
+let account = null;
+
+function formatPolFromWeiHex(weiHex) {
+  const wei = BigInt(weiHex);
+  const base = 10n ** 18n;
+  const whole = wei / base;
+  const frac = (wei % base).toString().padStart(18, "0").slice(0, 6);
+  return `${whole}.${frac}`;
+}
+
+function setStatusUI(text, onOff) {
+  setText("status", text);
+  const dot = $("dot");
+  if (!dot) return;
+  dot.classList.remove("on", "off");
+  dot.classList.add(onOff === "on" ? "on" : "off");
+}
+
+function activateTab(name) {
+  const tabs = Array.from(document.querySelectorAll(".tab"));
+  const views = { home: $("view-home"), shop: $("view-shop"), account: $("view-account") };
+
+  tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  Object.entries(views).forEach(([k, v]) => v && v.classList.toggle("active", k === name));
+}
+
+async function refreshWalletUI() {
+  if (!account) return;
+
+  setText("addr", account);
+  setDisabled("btnLogout", false);
+
+  const chainId = await getChainId().catch(() => "?");
+  setText("chain", chainId);
+
+  const balHex = await getBalanceWeiHex(account).catch(() => null);
+  setText("bal", balHex ? formatPolFromWeiHex(balHex) : "?");
+
+  setStatusUI("Connected", "on");
+}
+
+function refreshQuoteUI() {
+  setText("receiver", MERCHANT_ADDRESS);
+  setText("price", "Fixed 0.1 POL");
+  setText("amountPol", "0.100000 POL");
+  setText("updatedAt", "now");
+  setDisabled("btnPay", !account);
+  setText("shopMsg", "");
+}
+
+async function refreshMembershipFromServer() {
+  if (!account) {
+    hidePlan();
+    setText("mStatus", "-");
+    setText("mTx", "-");
+    setText("mVerified", "-");
+    return;
+  }
+
+  const st = await apiStatus(account).catch(() => null);
+  if (!st?.ok) {
+    setText("mVerified", st?.error || "Server error");
+    hidePlan();
+    return;
+  }
+
+  if (st.status === "inactive") {
+    setText("mStatus", "Inactive");
+    setText("mTx", "-");
+    setText("mVerified", "Server");
+    hidePlan();
+    return;
+  }
+
+  const expiresAtMs = Number(st.expiresAt);
+  setText("mStatus", st.status === "expired" ? "Expired" : "Active");
+  setText("mTx", st.txHash || "-");
+  setText("mVerified", "Server");
+
+  showPlan({
+    status: st.status === "expired" ? "expired" : "active",
+    txHash: st.txHash,
+    expiresAtMs,
+  });
+}
+
+async function ensurePolygonNetwork() {
+  // minimal: we only block if not polygon (we can extend later)
+  const cid = await getChainId();
+  if (String(cid).toLowerCase() !== POLYGON_CHAIN_ID) {
+    throw new Error("Wrong network. Please switch to Polygon.");
+  }
+}
+
+async function handlePay() {
+  try {
+    if (!account) throw new Error("Connect wallet first.");
+
+    modalOpen();
+    modalSet("Waiting for wallet confirmation", "Please confirm the transaction in MetaMask.");
+
+    await ensurePolygonNetwork();
+
+    // 1) send tx
+    let txHash;
+    try {
+      txHash = await payFixed({ account });
+    } catch (err) {
+      if (isUserRejected(err)) {
+        modalError("Canceled", "You rejected the transaction in MetaMask.");
+        return;
+      }
+      if (isPendingRequest(err)) {
+        modalError("Pending request", "Open MetaMask and complete the previous request.");
+        return;
+      }
+      throw err;
+    }
+
+    modalSet("Transaction submitted", "Waiting for network confirmation...");
+    modalSetState("loading");
+
+    // 2) wait receipt
+    const receipt = await waitForReceipt({ txHash });
+    if (receipt?.status !== "0x1") {
+      modalError("Failed", "Transaction failed on-chain.");
+      return;
+    }
+
+    // 3) server verify + save (THIS is what prevents localStorage cheating)
+    modalSet("Verifying payment", "Securing your plan on the server...");
+    const out = await apiSubmitPayment({ wallet: account, txHash });
+
+    if (!out?.ok) {
+      modalError("Server rejected", out?.error || "Payment could not be verified.");
+      return;
+    }
+
+    // 4) success animation + close
+    modalSet("Success", "Plan activated.");
+    await modalSuccessThenClose(900);
+
+    activateTab("account");
+    await refreshMembershipFromServer();
+    setText("shopMsg", "Payment confirmed.");
+  } catch (e) {
+    modalError("Error", e?.message || String(e));
+  }
+}
+
+function handleLogout() {
+  account = null;
+  setStatusUI("Disconnected", "off");
+  setText("addr", "-");
+  setText("chain", "-");
+  setText("bal", "-");
+  setDisabled("btnLogout", true);
+  setDisabled("btnPay", true);
+  hidePlan();
+  setText("shopMsg", "");
+}
+
+function wireTabs() {
+  const tabs = Array.from(document.querySelectorAll(".tab"));
+  on(tabs[0], "click", () => activateTab("home"));
+  on(tabs[1], "click", () => { activateTab("shop"); refreshQuoteUI(); });
+  on(tabs[2], "click", () => { activateTab("account"); refreshMembershipFromServer(); });
+}
+
+async function init() {
+  wireTabs();
+
+  setText("merchantCfg", MERCHANT_ADDRESS);
+  refreshQuoteUI();
+  setStatusUI("Disconnected", "off");
+
+  on($("modalClose"), "click", () => modalClose());
+
+  on($("btnConnect"), "click", async () => {
+    try {
+      account = await connectWallet();
+      await refreshWalletUI();
+      activateTab("shop");
+      refreshQuoteUI();
+      await refreshMembershipFromServer();
+    } catch (e) {
+      setText("sessionMsg", e?.message || String(e));
+    }
+  });
+
+  on($("btnFixRpc"), "click", () => {
+    setText("sessionMsg", "We will add the advanced RPC repair flow later (kept modular).");
+  });
+
+  on($("btnLogout"), "click", handleLogout);
+  on($("btnQuote"), "click", refreshQuoteUI);
+  on($("btnPay"), "click", handlePay);
+
+  // silent reconnect
+  if (window.ethereum) {
+    const accs = await window.ethereum.request({ method: "eth_accounts" }).catch(() => []);
+    if (accs?.[0]) {
+      account = accs[0];
+      await refreshWalletUI();
+      await refreshMembershipFromServer();
+    }
+
+    window.ethereum.on("accountsChanged", async (accs2) => {
+      account = accs2?.[0] || null;
+      if (!account) handleLogout();
+      else {
+        await refreshWalletUI();
+        await refreshMembershipFromServer();
+      }
+    });
+
+    window.ethereum.on("chainChanged", async () => {
+      if (account) {
+        await refreshWalletUI();
+        await refreshMembershipFromServer();
+      }
+    });
+  } else {
+    setText("sessionMsg", "MetaMask not detected.");
+  }
+}
+
+window.addEventListener("DOMContentLoaded", init);

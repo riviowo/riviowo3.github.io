@@ -1,0 +1,21 @@
+// public/js/config.js
+export const APP_NAME = "EryVanta";
+export const POLYGON_CHAIN_ID = "0x89"; // 137
+export const MERCHANT_ADDRESS = "0x03a6BC48ED8733Cc700AE49657931243f078a994";
+
+// Fixed price: 0.1 POL
+export const PAY_WEI = 100000000000000000n; // 1e17
+export const PAY_WEI_HEX = "0x16345785d8a0000";
+
+export const PLAN_DAYS = 30;
+export const PLAN_MS = PLAN_DAYS * 24 * 60 * 60 * 1000;
+
+// Reads only (fallback for reads if wallet is slow)
+export const POLYGON_RPC_CANDIDATES = [
+  "https://polygon-bor-rpc.publicnode.com",
+  "https://rpc.ankr.com/polygon",
+  "https://1rpc.io/matic",
+  "https://polygon.drpc.org",
+  "https://polygon-rpc.com",
+  "https://polygon-public.nodies.app",
+];

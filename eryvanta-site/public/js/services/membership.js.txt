@@ -1,0 +1,72 @@
+// public/js/services/membership.js
+import { PLAN_MS } from "../config.js";
+import { $, setText } from "../lib/dom.js";
+import { formatDHMS } from "../lib/time.js";
+
+let timerId = null;
+let ringC = null;
+
+function stopTicker() {
+  if (timerId) clearInterval(timerId);
+  timerId = null;
+}
+
+function setupRing() {
+  const ring = $("ringFg");
+  if (!ring) return null;
+  const r = 18;
+  const C = 2 * Math.PI * r;
+  ring.style.strokeDasharray = `${C} ${C}`;
+  ring.style.strokeDashoffset = "0";
+  return C;
+}
+
+function setRingProgress(pct01) {
+  if (!ringC) ringC = setupRing();
+  if (!ringC) return;
+
+  const ring = $("ringFg");
+  const clamped = Math.max(0, Math.min(1, pct01));
+  ring.style.strokeDashoffset = String(ringC * (1 - clamped));
+  setText("ringPct", `${Math.round(clamped * 100)}%`);
+}
+
+export function hidePlan() {
+  $("planCard")?.classList.remove("active");
+  stopTicker();
+}
+
+export function showPlan({ status, txHash, expiresAtMs }) {
+  $("planCard")?.classList.add("active");
+
+  setText("planTx", txHash || "-");
+  setText("planExpire", new Date(expiresAtMs).toISOString());
+
+  const badge = $("planBadge");
+  if (badge) {
+    if (status === "active") {
+      badge.textContent = "ACTIVE";
+      badge.style.background = "rgba(168,85,247,.16)";
+    } else {
+      badge.textContent = "EXPIRED";
+      badge.style.background = "rgba(239,68,68,.14)";
+    }
+  }
+
+  stopTicker();
+  timerId = setInterval(() => {
+    const remaining = expiresAtMs - Date.now();
+    setText("daysLeft", String(Math.max(0, Math.ceil(remaining / 86400000))));
+    setText("fineTime", formatDHMS(remaining));
+    setRingProgress(remaining <= 0 ? 0 : remaining / PLAN_MS);
+
+    $("withdrawBox")?.classList.toggle("show", remaining <= 0);
+  }, 1000);
+
+  // immediate draw
+  const remaining0 = expiresAtMs - Date.now();
+  setText("daysLeft", String(Math.max(0, Math.ceil(remaining0 / 86400000))));
+  setText("fineTime", formatDHMS(remaining0));
+  setRingProgress(remaining0 <= 0 ? 0 : remaining0 / PLAN_MS);
+  $("withdrawBox")?.classList.toggle("show", remaining0 <= 0);
+}

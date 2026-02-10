@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>EryVanta Admin</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+  <div class="wrap">
+    <h1>Admin Panel</h1>
+    <p class="muted">This page will be protected (Cloudflare Access) so only you can open it.</p>
+
+    <div class="row">
+      <input id="adminKey" placeholder="Admin Key"/>
+      <button id="btnLoad">Load Users</button>
+    </div>
+
+    <pre id="out"></pre>
+  </div>
+
+  <script type="module" src="/admin/js/admin.js"></script>
+</body>
+</html>
